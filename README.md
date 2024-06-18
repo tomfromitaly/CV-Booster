@@ -68,19 +68,14 @@ This project contains a Python script that simulates an Applicant Tracking Syste
 - `*resume*.txt`: The resume files to be processed.
 - `requirements.txt`: The list of required Python packages.
 
-## Example Output
-
-
-
-
-V1 Improvements:
-  Semantic Similarity Calculation:
+## V1 Improvements:
+  - Semantic Similarity Calculation:
     Added calculate_semantic_similarity function using cosine similarity to compare vectors, allowing for partial matches based on semantic similarity.
-  Advanced Keyword Matching: 
+  - Advanced Keyword Matching: 
     Incorporated semantic similarity in the calculate_score function with a threshold to score similar words.
-  Weighted Scoring: 
+  - Weighted Scoring: 
     Adjusted the scoring mechanism to weigh sections differently, reflecting common industry practices.
-  Enhanced Synonym Detection: 
+  - Enhanced Synonym Detection: 
     Improved the find_synonyms function to find similar words using vector similarities from SpaCy's vocab.
-  Granular Feedback: 
+  - Granular Feedback: 
     The suggest_improvements function now suggests missing keywords based on the keyword count.

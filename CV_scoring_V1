@@ -1,0 +1,167 @@
+import spacy
+import re
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import glob
+
+# Load the spacy model with vectors and named entity recognition
+nlp = spacy.load("en_core_web_md")
+
+def extract_keywords(job_description):
+    # Extract keywords and phrases using spacy
+    doc = nlp(job_description)
+    keywords = set()
+    
+    # Extract named entities and noun chunks
+    for ent in doc.ents:
+        if ent.label_ in {"ORG", "PRODUCT", "EVENT", "WORK_OF_ART", "LAW", "LANGUAGE", "DATE", "TIME", "MONEY", "QUANTITY", "ORDINAL", "CARDINAL"}:
+            keywords.add(ent.text.lower().strip())
+    
+    for chunk in doc.noun_chunks:
+        keywords.add(chunk.text.lower().strip())
+    
+    for token in doc:
+        if token.is_alpha and not token.is_stop and token.pos_ in {"NOUN", "VERB", "PROPN", "ADJ"}:
+            keywords.add(token.lemma_.lower().strip())
+    
+    # Filter out irrelevant keywords
+    irrelevant_keywords = {"we", "it", "you", "role", "self", "job", "key", "team", "path", "sense"}
+    keywords = [kw for kw in keywords if kw not in irrelevant_keywords]
+    
+    return list(keywords)
+
+def read_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        text = file.read()
+    return text
+
+def extract_plain_text_from_latex(latex_code):
+    # Remove LaTeX commands
+    text = re.sub(r'\\[a-zA-Z]+', '', latex_code)
+    # Remove curly braces
+    text = re.sub(r'[{}]', '', text)
+    # Remove extra spaces
+    text = ' '.join(text.split())
+    return text
+
+def parse_resume(resume_text):
+    # Parse the resume using spacy
+    doc = nlp(resume_text)
+    resume_data = {
+        "skills": [],
+        "experience": [],
+        "education": [],
+        "other": []
+    }
+    
+    current_section = "other"
+    for ent in doc.ents:
+        if ent.label_ in ["SKILL", "WORK_OF_ART", "ORG"]:
+            current_section = "skills"
+        elif ent.label_ in ["DATE"]:
+            current_section = "experience"
+        elif ent.label_ in ["PERSON", "GPE"]:
+            current_section = "education"
+        else:
+            current_section = "other"
+        resume_data[current_section].append(ent.text.lower().strip())
+    
+    return resume_data
+
+def calculate_semantic_similarity(word1_vector, word2_vector):
+    similarity = cosine_similarity(word1_vector, word2_vector)[0][0]
+    return similarity
+
+def calculate_score(keywords, resume_data):
+    achieved_score = 0
+    keyword_count = {keyword: 0 for keyword in keywords}
+    
+    # Cache vectors for keywords
+    keyword_vectors = {keyword: nlp(keyword).vector.reshape(1, -1) for keyword in keywords}
+    
+    similarity_threshold = 0.7
+    
+    for section, words in resume_data.items():
+        for word in words:
+            word_vector = nlp(word).vector.reshape(1, -1)
+            for keyword, keyword_vector in keyword_vectors.items():
+                if word == keyword:
+                    keyword_count[keyword] += 1
+                    achieved_score += section_weights.get(section, 0)  # Use get method to handle missing keys
+                else:
+                    similarity = calculate_semantic_similarity(word_vector, keyword_vector)
+                    if similarity > similarity_threshold:
+                        keyword_count[keyword] += 1
+                        achieved_score += section_weights.get(section, 0) * similarity
+    
+    return achieved_score, keyword_count
+
+def suggest_improvements(keywords, keyword_count, tfidf_scores):
+    missing_keywords = [keyword for keyword, count in keyword_count.items() if count == 0]
+    sorted_missing_keywords = sorted(missing_keywords, key=lambda x: tfidf_scores.get(x, 0), reverse=True)[:10]
+    suggestions = f"Consider adding the following keywords to improve your score: {', '.join(sorted_missing_keywords)}"
+    return suggestions
+
+def calculate_tfidf_scores(job_description, resume_texts):
+    vectorizer = TfidfVectorizer()
+    documents = [job_description] + resume_texts
+    tfidf_matrix = vectorizer.fit_transform(documents)
+    feature_names = vectorizer.get_feature_names_out()
+    
+    tfidf_scores = dict(zip(feature_names, tfidf_matrix.toarray()[0]))
+    return tfidf_scores
+
+# Read job description
+job_file_path = 'job.txt'
+job_description = read_file(job_file_path)
+
+# Define section weights
+section_weights = {
+    "skills": 2,
+    "experience": 4,
+    "education": 3,
+    "other": 1
+}
+
+# Extract keywords from job description
+keywords = extract_keywords(job_description)
+
+# Get list of resume files
+resume_files = glob.glob("*resume*.txt")
+
+# Read all resumes and calculate TF-IDF scores
+resume_texts = [extract_plain_text_from_latex(read_file(file)) for file in resume_files]
+tfidf_scores = calculate_tfidf_scores(job_description, resume_texts)
+
+# Track the best resume
+best_score = -1
+best_resume = None
+all_scores = {}
+
+# Process each resume file
+for resume_file in resume_files:
+    latex_resume_text = read_file(resume_file)
+    plain_resume_text = extract_plain_text_from_latex(latex_resume_text)
+    resume_data = parse_resume(plain_resume_text)
+    score, keyword_count = calculate_score(keywords, resume_data)
+    
+    all_scores[resume_file] = score
+    
+    if score > best_score:
+        best_score = score
+        best_resume = resume_file
+
+# Output results
+for resume_file, score in all_scores.items():
+    print(f"Score for {resume_file}: {score:.2f}")
+
+# Provide suggestions for the best resume
+if best_resume:
+    latex_resume_text = read_file(best_resume)
+    plain_resume_text = extract_plain_text_from_latex(latex_resume_text)
+    resume_data = parse_resume(plain_resume_text)
+    _, keyword_count = calculate_score(keywords, resume_data)
+    improvement_suggestions = suggest_improvements(keywords, keyword_count, tfidf_scores)
+    print(f"\nThe best matching resume is {best_resume} with a score of {best_score:.2f}")
+    print(improvement_suggestions)
